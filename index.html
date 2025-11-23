@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HRES Autonomous Dashboard</title>
+    <title>HRES Autonomous Dashboard (Area Chart Battery)</title>
     
     <!-- 1. TAILWIND CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -17,18 +17,9 @@
 
     <style>
         body { background-color: #0f172a; color: white; }
-        
-        /* Kustomisasi Scrollbar agar terlihat elegan dan futuristik */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b00; } /* Transparan */
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        
-        /* Kelas khusus untuk panel kiri agar scrollbar selalu terlihat rapi */
-        .left-panel-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: #334155 #0f172a;
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -36,14 +27,25 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // --- 0. FIX CONSOLE WARNINGS ---
+        const originalConsoleError = console.error;
+        console.error = (...args) => {
+            if (typeof args[0] === 'string' && /defaultProps/.test(args[0])) {
+                return;
+            }
+            originalConsoleError(...args);
+        };
+
+        // --- A. DESTRUKTURISASI GLOBAL VARIABLES ---
         const { useState, useEffect } = React;
         const { createRoot } = ReactDOM;
+        // PERBAIKAN: Menambahkan Bar untuk grafik baterai
         const { 
-            LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, 
-            Tooltip, ResponsiveContainer, ReferenceLine, Label 
+            ComposedChart, LineChart, Line, AreaChart, Area, Bar, XAxis, YAxis, CartesianGrid, 
+            Tooltip, ResponsiveContainer, ReferenceLine, Label, Legend 
         } = window.Recharts || {};
 
-        // --- DEFINISI ICON ---
+        // --- B. DEFINISI ICON ---
         const Icons = {
             Sun: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>,
             Wind: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg>,
@@ -58,7 +60,9 @@
             Menu: (props) => <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
         };
 
-        const ControlSlider = ({ label, value, setValue, min, max, unit, color }) => (
+        // --- C. KOMPONEN DASHBOARD ---
+        
+        const ControlSlider = ({ label, value, setValue, min, max, unit, color, step = 1 }) => (
             <div className="mb-4">
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
                     <span>{label}</span>
@@ -67,7 +71,8 @@
                 <input 
                     type="range" 
                     min={min} 
-                    max={max} 
+                    max={max}
+                    step={step}
                     value={value} 
                     onChange={(e) => setValue(parseFloat(e.target.value))}
                     className={`w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-${color}-500`}
@@ -94,7 +99,7 @@
             // State
             const [solarInput, setSolarInput] = useState(80);
             const [windInput, setWindInput] = useState(50);
-            const [loadInput, setLoadInput] = useState(40);
+            const [loadInput, setLoadInput] = useState(4); // PERUBAHAN: Default Load diperkecil
             const [gridPrice, setGridPrice] = useState(1500);
             const [soc, setSoc] = useState(50);
             
@@ -106,9 +111,11 @@
             const [logicReason, setLogicReason] = useState("Initializing...");
             const [gridActive, setGridActive] = useState(false);
             
-            const MAX_SOLAR_CAPACITY = 50;
-            const MAX_WIND_CAPACITY = 40;
-            const BATTERY_CAPACITY = 100;
+            // PERUBAHAN: Kapasitas Diperkecil (Skala Rumah)
+            const MAX_SOLAR_CAPACITY = 5; // Sebelumnya 50
+            const MAX_WIND_CAPACITY = 4;  // Sebelumnya 40
+            const BATTERY_CAPACITY = 10;  // Sebelumnya 100
+            
             const SOC_MAX_LIMIT = 80;
             const SOC_MIN_LIMIT = 20;
             const GRID_PRICE_EXPENSIVE = 1400;
@@ -119,9 +126,9 @@
                 const interval = setInterval(() => {
                     setTime(t => t + 1);
                     
-                    const solarNoise = solarInput > 0 ? (Math.random() * 2 - 1) : 0;
-                    const windNoise = windInput > 0 ? (Math.random() * 3 - 1.5) : 0;
-                    const loadNoise = Math.random() * 2 - 1;
+                    const solarNoise = solarInput > 0 ? (Math.random() * 0.2 - 0.1) : 0; // Noise diperkecil juga
+                    const windNoise = windInput > 0 ? (Math.random() * 0.3 - 0.15) : 0;
+                    const loadNoise = Math.random() * 0.2 - 0.1;
 
                     const currentSolar = Math.max(0, (solarInput / 100) * MAX_SOLAR_CAPACITY + solarNoise);
                     const currentWind = Math.max(0, (windInput / 100) * MAX_WIND_CAPACITY + windNoise);
@@ -135,6 +142,7 @@
                     let reasonMsg = "";
                     let useGrid = false;
                     let newSoc = soc;
+                    let batteryKw = 0; 
 
                     const isSurplus = netLoad < 0; 
                     const isGridExpensive = gridPrice > GRID_PRICE_EXPENSIVE;
@@ -146,6 +154,10 @@
                             action = -1; 
                             statusMsg = "CHARGING";
                             reasonMsg = "Surplus Energy & SOC < 80%";
+                            
+                            // PERUBAHAN: Saat Charging, set batteryKw = 0 agar grafik tidak muncul
+                            batteryKw = 0; 
+                            
                             newSoc = Math.min(100, soc + (Math.abs(netLoad) / BATTERY_CAPACITY) * 5);
                         } else {
                             action = 0;
@@ -158,6 +170,10 @@
                                 action = 1; 
                                 statusMsg = "DISCHARGING";
                                 reasonMsg = "Gen Low & Grid Expensive";
+                                
+                                // Saat Discharging, tetap tampilkan nilai positif
+                                batteryKw = netLoad;
+                                
                                 newSoc = Math.max(0, soc - (netLoad / BATTERY_CAPACITY) * 5);
                             } else {
                                 useGrid = true;
@@ -181,8 +197,10 @@
                             time: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit', second:'2-digit'}),
                             solar: parseFloat(currentSolar.toFixed(2)),
                             wind: parseFloat(currentWind.toFixed(2)),
+                            totalGen: parseFloat(totalGen.toFixed(2)),
                             load: parseFloat(currentLoad.toFixed(2)),
                             soc: parseFloat(newSoc.toFixed(1)),
+                            batteryKw: parseFloat(batteryKw.toFixed(2)), 
                             gridPrice: gridPrice,
                             action: action,
                             netLoad: parseFloat(netLoad.toFixed(2))
@@ -196,22 +214,28 @@
             }, [time, isRunning, solarInput, windInput, loadInput, gridPrice, soc]);
 
             if (!window.Recharts) {
-                return <div className="text-white p-10">Loading Library...</div>;
+                return (
+                    <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
+                        <div className="text-center">
+                            <h1 className="text-2xl font-bold mb-2">Sedang Memuat Library...</h1>
+                            <p className="text-slate-400">Pastikan Anda terhubung ke internet.</p>
+                        </div>
+                    </div>
+                );
             }
 
             return (
-                <div className="min-h-screen bg-slate-900 text-slate-200 font-sans p-4 md:p-6 overflow-x-hidden fixed inset-0 flex flex-col"> 
-                    {/* ^ 'fixed inset-0' membuat body tidak bisa discroll, kita scroll per bagian */}
+                <div className="min-h-screen bg-slate-900 text-slate-200 font-sans p-4 md:p-6 overflow-x-hidden">
                 
-                    {/* HEADER (Tetap/Fixed di Atas) */}
-                    <header className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-700 gap-4">
+                    {/* HEADER */}
+                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-700 gap-4">
                         <div className="w-full md:w-auto flex justify-between items-center">
                             <div>
-                                <h1 className="text-lg md:text-xl font-bold text-white flex items-start gap-2">
-                                    <Icons.Cpu className="text-blue-500 w-6 h-6 md:w-8 md:h-8 mt-1 shrink-0" />
-                                    <span className="break-words">HRES Autonomus Scheduling</span>
+                                <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                                    <Icons.Cpu className="text-blue-500 w-6 h-6 md:w-8 md:h-8" />
+                                    <span className="truncate">HRES Smart Controller</span>
                                 </h1>
-                                <p className="text-slate-400 text-xs md:text-sm mt-1 ml-8 md:ml-10">Rekayasa Inovasi Teknologi</p>
+                                <p className="text-slate-400 text-xs md:text-sm mt-1">Rekayasa Inovasi Teknologi</p>
                             </div>
                             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 bg-slate-800 rounded border border-slate-700">
                                 <Icons.Menu width="20" height="20" />
@@ -232,18 +256,19 @@
                         </div>
                     </header>
 
-                    {/* CONTAINER UTAMA (Fleksibel mengisi sisa ruang) */}
-                    <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6 pb-2 overflow-y-auto lg:overflow-hidden">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-                        {/* KOLOM KIRI: INPUT PANEL (SCROLLABLE PADA DESKTOP) */}
-                        <div className="left-panel-scroll order-2 lg:order-1 col-span-1 lg:col-span-3 space-y-6 lg:overflow-y-auto lg:h-full lg:pr-2">
+                        {/* KOLOM KIRI: INPUT PANEL */}
+                        <div className="order-2 lg:order-1 col-span-1 lg:col-span-3 space-y-6">
                             <div className="bg-slate-800 border border-slate-600 rounded-xl p-5 shadow-lg">
                                 <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                                     <Icons.Settings width="18" height="18" className="text-blue-400"/> Input Parameter
                                 </h3>
                                 <ControlSlider label="Intensitas Matahari" value={solarInput} setValue={setSolarInput} min={0} max={100} unit="%" color="yellow" />
                                 <ControlSlider label="Kecepatan Angin" value={windInput} setValue={setWindInput} min={0} max={100} unit="%" color="cyan" />
-                                <ControlSlider label="Beban Rumah (Load)" value={loadInput} setValue={setLoadInput} min={10} max={120} unit="kW" color="purple" />
+                                
+                                {/* PERUBAHAN: Range slider load diperkecil (1-12 kW) */}
+                                <ControlSlider label="Beban Rumah (Load)" value={loadInput} setValue={setLoadInput} min={0.5} max={12} step={0.5} unit="kW" color="purple" />
                                 
                                 <div className="mb-4 pt-4 border-t border-slate-700">
                                     <div className="flex justify-between text-xs text-slate-400 mb-1">
@@ -296,20 +321,11 @@
                                         <span>100%</span>
                                     </div>
                                 </div>
-                                {/* Contoh Konten Panjang untuk Test Scroll */}
-                                <div className="mt-4 pt-4 border-t border-slate-700">
-                                    <p className="text-xs text-slate-500">Log Sistem:</p>
-                                    <div className="h-20 overflow-y-auto text-[10px] text-slate-400 font-mono mt-1 bg-slate-900 p-2 rounded">
-                                        {data.slice(-5).reverse().map((d, i) => (
-                                            <div key={i}>{d.time} : {d.action === -1 ? "CHARGE" : d.action === 1 ? "DISCHG" : "IDLE"} (SOC: {d.soc}%)</div>
-                                        ))}
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
-                        {/* KOLOM KANAN: CHART (JUGA SCROLLABLE JIKA PERLU, TAPI BIASANYA DIAM) */}
-                        <div className="order-1 lg:order-2 col-span-1 lg:col-span-9 space-y-6 lg:overflow-y-auto lg:h-full lg:pr-2">
+                        {/* KOLOM KANAN: CHART */}
+                        <div className="order-1 lg:order-2 col-span-1 lg:col-span-9 space-y-6">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                                 <StatusCard title="Solar PV" value={data[data.length-1]?.solar || 0} unit="kW" icon={Icons.Sun} color="yellow" />
                                 <StatusCard title="Wind Turbine" value={data[data.length-1]?.wind || 0} unit="kW" icon={Icons.Wind} color="blue" />
@@ -325,27 +341,32 @@
                                 />
                             </div>
 
-                            {/* CHART UTAMA */}
+                            {/* CHART UTAMA (PERBAIKAN: Ditambahkan grafik Baterai) */}
                             <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 md:p-5 shadow-lg">
                                 <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-base md:text-lg font-bold text-white">Monitoring Daya</h3>
-                                    <div className="flex gap-3 text-xs">
+                                    <h3 className="text-base md:text-lg font-bold text-white">Monitoring Daya (Real-time)</h3>
+                                    <div className="flex gap-3 text-xs flex-wrap">
                                         <span className="flex items-center gap-1 text-yellow-400"><div className="w-2 h-2 bg-yellow-400 rounded-full"></div> Solar</span>
                                         <span className="flex items-center gap-1 text-cyan-400"><div className="w-2 h-2 bg-cyan-400 rounded-full"></div> Wind</span>
-                                        <span className="flex items-center gap-1 text-white"><div className="w-2 h-2 bg-white rounded-full"></div> Load</span>
+                                        <span className="flex items-center gap-1 text-purple-400"><div className="w-2 h-2 bg-purple-400 rounded-full"></div> Battery</span>
+                                        <span className="flex items-center gap-1 text-emerald-400"><div className="w-2 h-2 bg-emerald-400 rounded-full"></div> Total RE</span>
                                     </div>
                                 </div>
                                 <div className="h-[250px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={data} margin={{ left: 10, right: 10, bottom: 10 }}>
+                                        <ComposedChart data={data} margin={{ left: 10, right: 10, bottom: 10 }}>
                                             <defs>
                                                 <linearGradient id="colorSolar" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.3}/>
+                                                    <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.4}/>
                                                     <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
                                                 </linearGradient>
                                                 <linearGradient id="colorWind" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3}/>
+                                                    <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.4}/>
                                                     <stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/>
+                                                </linearGradient>
+                                                <linearGradient id="colorBattery" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#c084fc" stopOpacity={0.4}/>
+                                                    <stop offset="95%" stopColor="#c084fc" stopOpacity={0}/>
                                                 </linearGradient>
                                             </defs>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -356,10 +377,17 @@
                                                 <Label value="Daya (kW)" angle={-90} position="insideLeft" style={{fill: '#94a3b8', fontSize: '12px'}} />
                                             </YAxis>
                                             <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9', fontSize: '12px' }} />
-                                            <Area type="monotone" dataKey="solar" stackId="1" stroke="#fbbf24" fill="url(#colorSolar)" />
-                                            <Area type="monotone" dataKey="wind" stackId="1" stroke="#22d3ee" fill="url(#colorWind)" />
-                                            <Line type="monotone" dataKey="load" stroke="#ffffff" strokeWidth={2} dot={false} />
-                                        </AreaChart>
+                                            
+                                            <Area type="monotone" dataKey="solar" stroke="#fbbf24" fill="url(#colorSolar)" />
+                                            <Area type="monotone" dataKey="wind" stroke="#22d3ee" fill="url(#colorWind)" />
+                                            
+                                            {/* PERBAIKAN: Mengganti Bar menjadi Area untuk Battery Discharge */}
+                                            <Area type="monotone" dataKey="batteryKw" stroke="#c084fc" fill="url(#colorBattery)" />
+                                            
+                                            <ReferenceLine y={0} stroke="#475569" />
+
+                                            <Line type="monotone" dataKey="totalRE" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                        </ComposedChart>
                                     </ResponsiveContainer>
                                 </div>
                             </div>
@@ -419,5 +447,3 @@
     </script>
 </body>
 </html>
-
-
