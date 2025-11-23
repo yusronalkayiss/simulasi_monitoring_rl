@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HRES-Dashboard </title>
+    <title>HRES Autonomous Dashboard (Area Chart Battery)</title>
     
     <!-- 1. TAILWIND CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -134,8 +134,8 @@
                     const currentWind = Math.max(0, (windInput / 100) * MAX_WIND_CAPACITY + windNoise);
                     const currentLoad = Math.max(0, loadInput + loadNoise);
                     
-                    const totalGen = currentSolar + currentWind;
-                    const netLoad = currentLoad - totalGen; 
+                    const totalRE = currentSolar + currentWind;
+                    const netLoad = currentLoad - totalRE; 
 
                     let action = 0;
                     let statusMsg = "Balanced";
@@ -197,7 +197,7 @@
                             time: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit', second:'2-digit'}),
                             solar: parseFloat(currentSolar.toFixed(2)),
                             wind: parseFloat(currentWind.toFixed(2)),
-                            totalGen: parseFloat(totalGen.toFixed(2)),
+                            totalRE: parseFloat(totalRE.toFixed(2)),
                             load: parseFloat(currentLoad.toFixed(2)),
                             soc: parseFloat(newSoc.toFixed(1)),
                             batteryKw: parseFloat(batteryKw.toFixed(2)), 
@@ -348,7 +348,7 @@
                                     <div className="flex gap-3 text-xs flex-wrap">
                                         <span className="flex items-center gap-1 text-yellow-400"><div className="w-2 h-2 bg-yellow-400 rounded-full"></div> Solar</span>
                                         <span className="flex items-center gap-1 text-cyan-400"><div className="w-2 h-2 bg-cyan-400 rounded-full"></div> Wind</span>
-                                        <span className="flex items-center gap-1 text-purple-400"><div className="w-2 h-2 bg-purple-400 rounded-full"></div> Battery</span>
+                                        <span className="flex items-center gap-1 text-purple-400"><div className="w-2 h-2 bg-purple-400 rounded-full"></div> Battery </span>
                                         <span className="flex items-center gap-1 text-emerald-400"><div className="w-2 h-2 bg-emerald-400 rounded-full"></div> Total RE</span>
                                     </div>
                                 </div>
